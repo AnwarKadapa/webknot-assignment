@@ -1,7 +1,9 @@
 ## Campus Event Management — Reporting Module (Design Document)
 
 Author: Kadapa Anwar
+
 College: REVA University
+
 Date: 2025-09-07
 
 ## 1 Scope & Goals
