@@ -1,43 +1,48 @@
-# Campus Event Management — Reporting Module (Design Document)
+## Campus Event Management — Reporting Module (Design Document)
 
-**Author:** <Your Name Here>  
-**College:** <Your College>  
-**Date:** 2025-09-07
+Author: Kadapa Anwar
+College: REVA University
+Date: 2025-09-07
 
----
+## 1 Scope & Goals
 
-## 1) Scope & Goals
-Design a basic **event reporting module** for a campus event platform with:
-- Admin portal for creating events.
-- Student app to browse, register, and check-in.
-- Reports: popularity, participation, attendance %, average feedback.
+This system is meant to help colleges manage events and easily generate simple reports.
 
-No coding is required; this document captures **data model, APIs, workflows, assumptions, and report queries**.
+Admins can create events like workshops, fests, or hackathons.
 
----
+Students can browse events, register, and check in.
 
-## 2) Data to Track
-- **Event creation**: event metadata, type, timing, capacity, status.
-- **Student registration**: registration status (confirmed/waitlisted/cancelled), timestamps.
-- **Attendance**: check-in/out timestamps, method (QR/manual).
-- **Feedback**: rating (1–5) + optional comment (only from attendees).
+Reports will cover popularity, attendance %, student participation, and average feedback.
 
----
+This is just a design document, so the focus is on structure — data, APIs, workflows, and report queries — not on coding.
 
-## 3) Multi‑Tenant Design & Scale Assumptions
-**Scale**: ~50 colleges × ~500 students each × ~20 events/semester.  
-**Tenancy**: Keep a **single logical database** with a `college_id` on tenant-bound tables, plus row-level constraints.  
-**Event IDs**: Use **globally unique `event_id`** (UUID). Optionally also keep a human-friendly `event_code` unique per college: `UNIQUE(college_id, event_code)`.
+## 2 Data to Track
 
-**Why this design?**
-- Simple operations across colleges if needed.
-- Indexes on `(college_id, …)` keep queries fast.
-- Easier governance than 50 separate databases; can be sharded later if required.
+We need to track:
 
----
+Events: name, type, timing, capacity, status.
 
-## 4) ER Diagram (Mermaid)
-```mermaid
+Students: details like name, roll no, email, branch, year.
+
+Registrations: status (Confirmed, Waitlisted, Cancelled) and timestamps.
+
+Attendance: who checked in/out, method (QR/manual).
+
+Feedback: rating (1–5) and optional comments (only from attendees).
+
+## 3 Multi-Tenant Design & Scale Assumptions
+
+The platform is for multiple colleges (~50), each with ~500 students and ~20 events per semester.
+
+Single database: separate data using college_id in all tables.
+
+Event IDs: globally unique (UUID) to avoid confusion.
+
+Optional: human-friendly event_code unique within each college.
+
+This keeps queries simple, indexing fast, and the design ready to scale if more colleges are added later.
+
+## 4 ER Diagram (Mermaid)
 erDiagram
     COLLEGE ||--o{{ STUDENT : has
     COLLEGE ||--o{{ EVENT : organizes
@@ -48,12 +53,12 @@ erDiagram
     STUDENT ||--o{{ FEEDBACK : submits
     EVENT ||--o{{ FEEDBACK : receives
 
-    COLLEGE {{
+    COLLEGE { 
       string college_id PK
       string name
-    }}
+    }
 
-    STUDENT {{
+    STUDENT { 
       string student_id PK
       string college_id FK
       string roll_no
@@ -61,237 +66,197 @@ erDiagram
       string email
       string phone
       string branch
-      int    year
+      int year
       timestamp created_at
-    }}
+    }
 
-    EVENT {{
+    EVENT {
       string event_id PK
       string college_id FK
       string name
-      string type  // Workshop|Hackathon|Seminar|Fest
+      string type
       timestamp start_time
       timestamp end_time
       string location
       int capacity
       bool allow_waitlist
-      string status // Draft|Open|Closed|Cancelled
+      string status
       string created_by
       timestamp created_at
-    }}
+    }
 
-    REGISTRATION {{
+    REGISTRATION {
       string reg_id PK
       string event_id FK
       string student_id FK
       timestamp registered_at
-      string status // Confirmed|Waitlisted|Cancelled
-      string source  // Web|Mobile
-    }}
+      string status
+      string source
+    }
 
-    ATTENDANCE {{
+    ATTENDANCE {
       string att_id PK
       string event_id FK
       string student_id FK
       timestamp check_in_at
       timestamp check_out_at
-      string method // QR|Manual
+      string method
       string marked_by
-    }}
+    }
 
-    FEEDBACK {{
+    FEEDBACK {
       string feedback_id PK
       string event_id FK
       string student_id FK
-      int rating // 1..5
+      int rating
       string comment
       timestamp submitted_at
-    }}
-```
+    }
 
----
+## 5 Table Sketch & Key Constraints
 
-## 5) Table Sketch & Key Constraints
-- `UNIQUE(college_id, roll_no)` on **STUDENT** (no duplicate roll numbers inside a college).
-- Prevent duplicate registrations: `UNIQUE(event_id, student_id)` on **REGISTRATION**.
-- Feedback only once per student per event: `UNIQUE(event_id, student_id)` on **FEEDBACK**.
-- Attendance records can be one per event per student: `UNIQUE(event_id, student_id)` on **ATTENDANCE** (or allow multiple with only last check-in counted).
+STUDENT: no duplicate roll numbers per college (UNIQUE(college_id, roll_no)).
 
-**Capacity rule:** Confirmed registrations ≤ capacity; overflow → Waitlist if `allow_waitlist=true`.
+REGISTRATION: prevent duplicate registrations (UNIQUE(event_id, student_id)).
 
----
+FEEDBACK: only one per student per event (UNIQUE(event_id, student_id)).
 
-## 6) API Design (No Coding — just specs)
+ATTENDANCE: one per event per student (or last check-in counts).
 
-### Event Management
-- `POST /events` — Create an event (admin).
-- `GET /events?college_id=...&type=...&status=...` — List/browse.
-- `PATCH /events/{event_id}` — Update status: Draft/Open/Closed/Cancelled.
+Capacity rule: Confirmed registrations ≤ capacity. Extra → Waitlist if allowed.
 
-### Registration
-- `POST /events/{event_id}/register` — Register a student.  
-  - Reject if duplicate.  
-  - Confirm if capacity available else Waitlist.  
-- `DELETE /events/{event_id}/register/{student_id}` — Cancel registration (frees a seat; optionally auto-promote from waitlist).
+## 6 API Design (Specs Only)
 
-### Attendance
-- `POST /events/{event_id}/attendance/check-in` — Mark check-in (QR/manual).  
-- `POST /events/{event_id}/attendance/check-out` — Optional.
+Event Management
 
-### Feedback
-- `POST /events/{event_id}/feedback` — Submit rating (1–5) + comment (**only if attended**).
+POST /events → create event
 
-### Reports
-- `GET /reports/popularity?college_id=...` — Events sorted by registrations.  
-- `GET /reports/participation?student_id=...` — Student’s attended events.  
-- `GET /reports/event-summary?event_id=...` — Registrations, attendance %, average rating.  
-- **Bonus**: `GET /reports/top-active-students?college_id=...&limit=3`  
-- **Bonus**: `GET /reports/popularity?college_id=...&type=Workshop`
+GET /events?college_id=…&type=…&status=… → list events
 
----
+PATCH /events/{event_id} → update status
 
-## 7) Core Workflows (Mermaid Sequence)
+Registration
 
-### 7.1 Registration
-```mermaid
+POST /events/{event_id}/register → register student (auto waitlist if full)
+
+DELETE /events/{event_id}/register/{student_id} → cancel registration
+
+Attendance
+
+POST /events/{event_id}/attendance/check-in → mark check-in
+
+POST /events/{event_id}/attendance/check-out → optional
+
+Feedback
+
+POST /events/{event_id}/feedback → submit rating/comment (only if attended)
+
+Reports
+
+GET /reports/popularity?college_id=…
+
+GET /reports/participation?student_id=…
+
+GET /reports/event-summary?event_id=…
+
+Optional: top-active-students, filter by event type
+
+## 7 Core Workflows (Mermaid Sequence)
+
+7.1 Registration
+
 sequenceDiagram
     autonumber
     participant U as Student
-    participant API as Backend API
+    participant API as Backend
     participant DB as Database
 
     U->>API: Register(event_id, student_id)
-    API->>DB: Check duplicate (event_id, student_id)
+    API->>DB: Check duplicates
     DB-->>API: Not found
     API->>DB: Count confirmed vs capacity
     DB-->>API: count
     alt Capacity available
         API->>DB: Insert REGISTRATION(status=Confirmed)
-        API-->>U: Registration Confirmed
-    else No capacity & waitlist allowed
+        API-->>U: Confirmed
+    else Waitlist allowed
         API->>DB: Insert REGISTRATION(status=Waitlisted)
         API-->>U: Added to Waitlist
-    else No capacity & no waitlist
-        API-->>U: Reject (Full)
+    else Full
+        API-->>U: Registration rejected
     end
-```
 
-### 7.2 Attendance (QR)
-```mermaid
+
+7.2 Attendance (QR)
+
 sequenceDiagram
-    participant U as Student (QR)
-    participant API as Backend API
+    participant U as Student
+    participant API as Backend
     participant DB as Database
-    U->>API: Scan QR (event_id, student_id, token)
-    API->>DB: Verify registration/status
+    U->>API: Scan QR
+    API->>DB: Verify registration
     API->>DB: Upsert ATTENDANCE(check_in_at=now)
     API-->>U: Check-in successful
-```
 
-### 7.3 Reporting
-```mermaid
+
+7.3 Reporting
+
 sequenceDiagram
     participant A as Admin
-    participant API as Backend API
+    participant API as Backend
     participant DB as Database
     A->>API: Request Event Summary(event_id)
-    API->>DB: Run queries (registration, attendance, feedback)
-    DB-->>API: Aggregates
+    API->>DB: Run queries
+    DB-->>API: Aggregated results
     API-->>A: Summary JSON/CSV
-```
 
----
+## 8 Edge Cases & Rules
 
-## 8) Edge Cases & Rules
-- Duplicate registration attempts → reject politely.
-- Cancelled events → registrations auto-cancel; attendance/feedback locked.
-- Feedback only from attendees; one feedback per student/event.
-- Attendance allowed only for **Confirmed** registrants.
-- Waitlist auto-promotion when a seat frees.
-- Time-window for check-in (e.g., within event hours).
-- Email/phone uniqueness per student within a college.
-- PII: restrict cross-college access using `college_id` filters.
+Reject duplicate registrations.
 
----
+Cancelled events → registrations auto-cancel; attendance/feedback locked.
 
-## 9) Report Queries (SQL Sketch)
+Feedback only from attendees; one per student/event.
 
-### 9.1 Event Popularity (by registrations)
-```sql
-SELECT e.event_id, e.name, e.type,
-       COUNT(CASE WHEN r.status='Confirmed' THEN 1 END) AS registrations
-FROM EVENT e
-LEFT JOIN REGISTRATION r ON r.event_id = e.event_id
-WHERE e.college_id = :college_id
-GROUP BY e.event_id, e.name, e.type
-ORDER BY registrations DESC;
-```
+Attendance only for confirmed registrants.
 
-### 9.2 Attendance % per event
-```sql
-SELECT e.event_id, e.name,
-       CAST(100.0 * COUNT(DISTINCT a.student_id) / NULLIF(COUNT(DISTINCT r.student_id),0) AS DECIMAL(5,2)) AS attendance_pct
-FROM EVENT e
-LEFT JOIN REGISTRATION r ON r.event_id = e.event_id AND r.status='Confirmed'
-LEFT JOIN ATTENDANCE a ON a.event_id = e.event_id
-WHERE e.college_id = :college_id
-GROUP BY e.event_id, e.name
-ORDER BY attendance_pct DESC;
-```
+Waitlist auto-promotion when seat frees.
 
-### 9.3 Average Feedback per event
-```sql
-SELECT e.event_id, e.name,
-       AVG(f.rating) AS avg_rating, COUNT(f.rating) AS ratings_count
-FROM EVENT e
-LEFT JOIN FEEDBACK f ON f.event_id = e.event_id
-WHERE e.college_id = :college_id
-GROUP BY e.event_id, e.name
-ORDER BY avg_rating DESC NULLS LAST;
-```
+Check-in only within event hours.
 
-### 9.4 Student Participation (events attended)
-```sql
-SELECT s.student_id, s.name,
-       COUNT(DISTINCT a.event_id) AS events_attended
-FROM STUDENT s
-LEFT JOIN ATTENDANCE a ON a.student_id = s.student_id
-WHERE s.college_id = :college_id
-GROUP BY s.student_id, s.name
-ORDER BY events_attended DESC;
-```
+Unique email/phone per student per college.
 
-### 9.5 Top N Most Active Students (attended)
-```sql
-SELECT s.student_id, s.name,
-       COUNT(DISTINCT a.event_id) AS events_attended
-FROM STUDENT s
-JOIN ATTENDANCE a ON a.student_id = s.student_id
-WHERE s.college_id = :college_id
-GROUP BY s.student_id, s.name
-ORDER BY events_attended DESC
-LIMIT :limit; -- e.g., 3
-```
+Restrict cross-college data access using college_id.
 
-### 9.6 Filter by Event Type
-```sql
--- Combine with 9.1 and add:
-AND e.type = :type
-```
+## 9 Report Queries (SQL Sketch)
 
----
+Event Popularity → count confirmed registrations
 
-## 10) Non‑Functional Notes (Brief)
-- **Indices**: `(college_id, event_id)`, `(college_id, roll_no)`, `(event_id, student_id)`.
-- **Privacy**: enforce row-level filters by `college_id` in all admin queries.
-- **Portability**: SQL is SQLite/Postgres friendly with minor syntax tweaks.
-- **Extensibility**: add `ORGANIZER` table later if needed.
+Attendance % → % of registered students who attended
 
----
+Average Feedback → average rating per event
 
-## 11) Appendix — Status Codes
-- Event.status: Draft | Open | Closed | Cancelled
-- Registration.status: Confirmed | Waitlisted | Cancelled
-- Attendance.method: QR | Manual
-```
+Student Participation → events attended per student
 
+Top N Active Students → most active students
+
+Filter by Event Type → reports filtered by type
+
+
+## 10 Non-Functional Notes
+
+Indices: (college_id, event_id), (college_id, roll_no), (event_id, student_id)
+
+Privacy: filter by college_id in all queries
+
+Portability: SQL works for SQLite/Postgres
+
+Extensibility: can add ORGANIZER table later
+
+## 11 Appendix — Status Codes
+
+Event.status: Draft | Open | Closed | Cancelled
+
+Registration.status: Confirmed | Waitlisted | Cancelled
+
+Attendance.method: QR | Manual
