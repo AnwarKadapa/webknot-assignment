@@ -1,6 +1,5 @@
 # Webknot Campus Drive Assignment — README
 
-
 ## 1. Problem Understanding
 The whole idea of this platform is to make college events easier to manage. On one side, the college staff can create events like workshops, hackathons, seminars, or even cultural fests. On the other side, students can check what events are coming up, register if they’re interested, and mark their attendance when they actually attend.
 The reporting part is needed so that we don’t just create events but also understand how they went. For example, we should be able to see how many students registered, how many showed up, what kind of feedback students gave, which events were more popular, and also how actively each student is taking part in different events.
